@@ -1,20 +1,141 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# DocumentReview
 
-# Run and deploy your AI Studio app
+**DocumentReview/(DocuReview)** is an enterprise-grade, role-based web application designed for reviewing, correcting, and approving internal company documents (policies, contracts, agreements, and drafts). It streamlines the collaboration process, replacing messy email-based version tracking with a solid, structured workflow.
 
-This contains everything you need to run your app locally.
+The application is fully containerized and optimized for deployment on **VPS environments using Docker Compose**.
 
-View your app in AI Studio: https://ai.studio/apps/a2503c61-6051-43df-a68f-eaf916bae67f
+---
 
-## Run Locally
+## 🚀 Key Features & Role-Based Workflows
 
-**Prerequisites:**  Node.js
+The system enforces strict permission boundaries based on user roles:
 
+1. **Administrator (Admin):**
+   - Register new user accounts with secure passwords and assigned roles.
+   - Manage, review, and delete active user accounts.
+   - Monitor VPS resource status and system capacity.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+2. **Submitter (Beterjesztő):**
+   - Upload new draft documents using drag-and-drop file upload (supports MS Word `.docx` and `.txt` files).
+   - Speed up creation with built-in corporate templates (e.g., ISO 9001 Quality Manual, Organizational Regulations).
+   - Track submitted drafts, approval actions, and official event logs.
+
+3. **Reviewer (Véleményező):**
+   - Interactive correction workbench with paragraph-level targeting.
+   - Submit four types of structured corrections: **Modify/Replace**, **Delete**, **Insert**, or **Comment/Note**.
+   - Input professional justifications and arguments for each suggested change.
+
+4. **Approver (Jóváhagyó):**
+   - Executive decision-making board and virtual signing center.
+   - Review proposed corrections individually with options to **Accept** or **Reject** suggestions.
+   - Acceptances dynamically merge and update the document text flow automatically.
+   - Finalize and seal the document status, locking it from further changes.
+   - Copy clean finalized text to clipboard or export directly as a `.txt` file.
+
+---
+
+## 🐳 VPS Docker-Based Deployment Guide
+
+The application is configured to run behind a fast, lightweight Nginx web server inside a Docker container.
+
+### 1. Required Configuration Files
+
+Place the following three files in the root folder of your project:
+
+#### `Dockerfile`
+```dockerfile
+# Multi-stage Docker build for optimal client-side SPA delivery
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# Nginx production environment
+FROM nginx:1.25-alpine AS production
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+#### `nginx.conf`
+```nginx
+server {
+    listen 80;
+    server_name localhost;
+
+    location / {
+        root /usr/share/nginx/html;
+        index index.html index.htm;
+        # Crucial fallback router for modern React SPA routing
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Leverage browser caching for static assets
+    location ~* \.(?:ico|css|js|gif|jpe?g|png|woff2?|eot|otf|ttf|svg|map)$ {
+        root /usr/share/nginx/html;
+        expires 30d;
+        add_header Cache-Control "public, no-transform";
+    }
+
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html {
+        root /usr/share/nginx/html;
+    }
+}
+```
+
+#### `docker-compose.yml`
+```yaml
+version: '3.8'
+
+services:
+  docureview:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docureview_app
+    ports:
+      - "3000:80"  # Exposes the web app on port 3000 of your VPS
+    restart: always
+    environment:
+      - NODE_ENV=production
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+### 2. Spinning Up the Server on Your VPS
+
+Connect to your VPS via SSH, upload the source files, navigate to the project directory, and run:
+
+```bash
+docker compose up --build -d
+```
+
+The application will build, configure itself, and run smoothly in detached mode on **`http://<YOUR_VPS_IP>:3000`**!
+
+## 🛡️ Built-In Test Users (For Quick Access & Testing)
+
+The following system-defined test profiles are available out-of-the-box on the login screen for seamless demonstration of the roles:
+
+| Name | Role | Email | Password |
+| :--- | :--- | :--- | :--- |
+| **Kovács Péter** | Submitter (Beterjesztő) | `kovacs.peter@vps.hu` | `beterjeszto123` |
+| **Szabó Anna** | Reviewer (Véleményező) | `szabo.anna@vps.hu` | `velemenyezo123` |
+| **Tóth Gábor** | Approver (Jóváhagyó) | `toth.gabor@vps.hu` | `jovahagyo123` |
+| **Nagy Zsolt** | Administrator (Admin) | `admin@vps.hu` | `adminsecure123` |
+
+---
+
+## 💻 Tech Stack
+- **Framework:** React 19 + TypeScript + Vite
+- **Styling & UI:** Tailwind CSS v4 + Lucide React icon library
+- **Animations:** Motion/React
+- **State & Persistence:** Seamless UI-state saving and cross-device recovery using `localStorage`
+- **Containerization:** Docker multi-stage pipeline + Nginx production server
+
