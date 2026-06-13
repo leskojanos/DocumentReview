@@ -1,0 +1,39 @@
+name: Auto Release on Tag
+
+on:
+  push:
+    tags:
+      - 'v*' # Lefut minden v0.1, v0.2 stb. tag beküldésekor
+
+jobs:
+  build_and_release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout kód
+        uses: actions/checkout@v4
+
+      - name: Node beállítása
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Függőségek telepítése és Build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Projekt becsomagolása ZIP-be
+        run: zip -r DocumentReview_dist.zip dist/
+
+      - name: GitHub Release létrehozása és aszet feltöltése
+        uses: softprops/action-gh-release@v1
+        with:
+          files: DocumentReview_dist.zip
+          prerelease: true # Így Pre-release címkét kap
+          name: "Pre-release ${{ github.ref_name }}"
+          body: |
+            ### Automatikus kiadás
+            - **Verzió:** ${{ github.ref_name }}
+            - **Commit:** ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
