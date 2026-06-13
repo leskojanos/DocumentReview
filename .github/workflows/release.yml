@@ -8,6 +8,9 @@ on:
 jobs:
   build_and_release:
     runs-on: ubuntu-latest
+    # Adj írási jogot a Release létrehozásához:
+    permissions:
+      contents: write
     steps:
       - name: Checkout kód
         uses: actions/checkout@v4
