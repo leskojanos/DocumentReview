@@ -1,0 +1,6 @@
+{
+  "name": "Dokumentum Véleményező",
+  "description": "Enterprise-grade webes dokumentum véleményező és korrektúra jóváhagyó rendszer admin, beterjesztő, véleményező és jóváhagyó szerepkörökkel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

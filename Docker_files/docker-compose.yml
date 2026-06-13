@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  docureview:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docureview_app
+    ports:
+      - "3000:80"  # A 3000-as porton lesz elérhető a VPS-en kívülről
+    restart: always
+    environment:
+      - NODE_ENV=production
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
