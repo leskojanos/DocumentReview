@@ -52,4 +52,9 @@ export interface Document {
   status: DocumentStatus;
   paragraphs: Paragraph[];
   history: DocumentHistory[];
+  originalDocxBase64?: string;
+  reviewDeadline?: string;
+  comment?: string;
+  isDeadlineExtended?: boolean;
+  extensionCount?: number;
 }

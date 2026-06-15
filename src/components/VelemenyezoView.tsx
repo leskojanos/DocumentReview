@@ -3,134 +3,267 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+// @ts-ignore
+import mammoth from 'mammoth';
+import { Document as DocxGen, Packer, Paragraph as DocxParagraphTag, TextRun } from 'docx';
 import { Document, Paragraph, Suggestion, User } from '../types';
-import { FileText, Eye, AlertCircle, Sparkles, Check, Edit3, Trash2, PlusCircle, MessageSquare, CornerDownRight, Send } from 'lucide-react';
+import { FileText, Eye, AlertCircle, Sparkles, Check, Edit3, Trash2, PlusCircle, MessageSquare, CornerDownRight, Send, UploadCloud, Download, CheckCircle2, Bell } from 'lucide-react';
 
 interface VelemenyezoViewProps {
   documents: Document[];
   currentUser: User;
   onAddSuggestion: (docId: string, paragraphId: string, suggestion: Omit<Suggestion, 'id' | 'timestamp'>) => void;
   onSetStatus: (docId: string, status: 'reviewed' | 'under_review') => void;
+  onUpdateParagraphs: (docId: string, paragraphs: Paragraph[], originalDocxBase64?: string) => void;
 }
 
-export default function VelemenyezoView({ documents, currentUser, onAddSuggestion, onSetStatus }: VelemenyezoViewProps) {
+export default function VelemenyezoView({ documents, currentUser, onAddSuggestion, onSetStatus, onUpdateParagraphs }: VelemenyezoViewProps) {
   const [activeDoc, setActiveDoc] = useState<Document | null>(null);
-  const [activeParagraphId, setActiveParagraphId] = useState<string | null>(null);
 
-  // Form states for new suggestion
-  const [sugType, setSugType] = useState<'modify' | 'delete' | 'insert' | 'comment'>('modify');
-  const [highlightedText, setHighlightedText] = useState('');
-  const [suggestedText, setSuggestedText] = useState('');
-  const [comment, setComment] = useState('');
+  // Custom dialog and notification states
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Drag & drop state for real docx file parsing
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleUploadedFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      handleUploadedFile(e.target.files[0]);
+    }
+  };
+
+  const handleUploadedFile = (file: File) => {
+    if (!activeDoc) {
+      setErrorMessage("Kérjük, előbb válasszon ki egy dokumentumot a várólistából, amit frissíteni szeretne a valós Word-fájllal!");
+      return;
+    }
+
+    const processFile = (originalDocxBase64?: string) => {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        let extractedText = '';
+        if (file.name.endsWith('.docx')) {
+          const arrayBuffer = event.target?.result as ArrayBuffer;
+          try {
+            const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+            extractedText = result.value;
+          } catch (err: any) {
+            console.error("Hiba a .docx beolvasása közben:", err);
+            setErrorMessage(`Hiba a .docx beolvasásakor: ${err.message || err}`);
+            return;
+          }
+        } else {
+          extractedText = event.target?.result as string;
+        }
+
+        if (extractedText && extractedText.trim()) {
+          const parsedParagraphs = extractedText
+            .split('\n')
+            .map((p) => p.trim())
+            .filter((p) => p.length > 0)
+            .map((txt, index) => ({
+              id: `p-${Date.now()}-${index}`,
+              originalText: txt,
+              currentText: txt,
+              suggestions: []
+            }));
+
+          // Dynamically update document paragraphs globally and locally
+          onUpdateParagraphs(activeDoc.id, parsedParagraphs, originalDocxBase64);
+          
+          setActiveDoc({
+            ...activeDoc,
+            paragraphs: parsedParagraphs,
+            originalDocxBase64: originalDocxBase64 || activeDoc.originalDocxBase64
+          });
+          setSuccessMessage(`A(z) "${file.name}" fájlból ${parsedParagraphs.length} bekezdést sikeresen beolvastunk és frissítettük a szöveg tartalmát!`);
+          setTimeout(() => setSuccessMessage(null), 5000);
+        } else {
+          setErrorMessage("Üres fájl vagy nem sikerült szöveget kinyerni.");
+        }
+      };
+
+      if (file.name.endsWith('.docx')) {
+        reader.readAsArrayBuffer(file);
+      } else {
+        reader.readAsText(file);
+      }
+    };
+
+    if (file.name.endsWith('.docx')) {
+      const readerBase64 = new FileReader();
+      readerBase64.onload = (e) => {
+        const dataUrlStr = e.target?.result as string;
+        if (dataUrlStr) {
+          const b64 = dataUrlStr.split(',')[1];
+          processFile(b64);
+        } else {
+          processFile(undefined);
+        }
+      };
+      readerBase64.readAsDataURL(file);
+    } else {
+      processFile(undefined);
+    }
+  };
+
+  const handleDownloadFile = (doc: Document) => {
+    if (doc.originalDocxBase64) {
+      try {
+        const byteCharacters = atob(doc.originalDocxBase64);
+        const byteNumbers = new Uint8Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const blob = new Blob([byteNumbers], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const fileName = doc.title.endsWith('.docx') ? doc.title : `${doc.title}.docx`;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        return;
+      } catch (err: any) {
+        console.error("Hiba a tárolt Word fájl binárissá alakítása közben, generáló módra váltás...", err);
+      }
+    }
+
+    try {
+      const docxFile = new DocxGen({
+        sections: [
+          {
+            properties: {},
+            children: doc.paragraphs.map(
+              (p) =>
+                new DocxParagraphTag({
+                  children: [
+                    new TextRun({
+                      text: p.originalText,
+                      size: 24, // 12pt (Word half-points: 24 = 12pt)
+                    }),
+                  ],
+                })
+            ),
+          },
+        ],
+      });
+
+      Packer.toBlob(docxFile).then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const fileName = doc.title.endsWith('.docx') ? doc.title : `${doc.title}.docx`;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }).catch((err) => {
+        console.error("Hiba a Word fájl generálása közben:", err);
+        setErrorMessage(`Nem sikerült generálni a Word fájlt: ${err?.message || err}`);
+      });
+    } catch (err: any) {
+      console.error("Error creating docx object:", err);
+      setErrorMessage(`Hiba történt: ${err.message || err}`);
+    }
+  };
 
   // We filter all documents that are currently in review queue (under_review)
   const inReviewDocs = documents.filter((doc) => doc.status === 'under_review');
+  const approvedDocs = documents.filter((doc) => doc.status === 'approved');
 
-  const handleSelectParagraph = (p: Paragraph) => {
-    setActiveParagraphId(p.id);
-    setHighlightedText(p.originalText); // Pre-fill with original paragraph text or part of it
-    setSuggestedText('');
-    setComment('');
+  const handleDownloadTxt = (doc: Document) => {
+    const text = doc.paragraphs.map(p => p.currentText).join('\n\n');
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${doc.title}_final_hu.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
-  const submitSuggestion = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeDoc || !activeParagraphId) return;
+  const handleDownloadDocx = (doc: Document) => {
+    try {
+      const docxFile = new DocxGen({
+        sections: [
+          {
+            properties: {},
+            children: doc.paragraphs.map(
+              (p) =>
+                new DocxParagraphTag({
+                  children: [
+                    new TextRun({
+                      text: p.currentText,
+                      size: 24, // 12pt (Word half-points: 24 = 12pt)
+                    }),
+                  ],
+                })
+            ),
+          },
+        ],
+      });
 
-    onAddSuggestion(activeDoc.id, activeParagraphId, {
-      reviewer: currentUser.name,
-      type: sugType,
-      highlightedText: sugType !== 'insert' ? highlightedText.trim() : undefined,
-      suggestedText: sugType !== 'comment' ? suggestedText.trim() : undefined,
-      comment: comment.trim() || undefined,
-      status: 'pending'
-    });
-
-    // Reset suggestion fields
-    setHighlightedText('');
-    setSuggestedText('');
-    setComment('');
-    setActiveParagraphId(null);
-
-    // Refresh active document view to reflect new suggestions immediately
-    const updated = documents.find(d => d.id === activeDoc.id);
-    if (updated) {
-      setActiveDoc(updated);
+      Packer.toBlob(docxFile).then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const baseName = doc.title.endsWith('.docx') ? doc.title.slice(0, -5) : doc.title;
+        link.download = `${baseName}_final.docx`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }).catch((err) => {
+        console.error("Hiba a Word fájl generálásakor:", err);
+      });
+    } catch (err: any) {
+      console.error("Error creating docx file:", err);
     }
   };
 
   const handleFinishReview = (docId: string) => {
-    if (confirm('Biztosan befejezi a véleményezést? A dokumentum átkerül "Véleményezve" státuszba a Jóváhagyó elé.')) {
-      onSetStatus(docId, 'reviewed');
-      setActiveDoc(null);
-      setActiveParagraphId(null);
-      alert('A korrektúrákat sikeresen beküldtük a döntéshozó elé!');
-    }
+    setShowFinishConfirm(true);
   };
 
-  // Helper render to show inline track changes in reviewer's preview editor
-  const renderInteractiveText = (p: Paragraph) => {
-    if (p.suggestions.length === 0) {
-      return <span className="text-slate-800">{p.originalText}</span>;
-    }
-
-    // Since many different things can change we list them clearly
-    return (
-      <div className="space-y-2 text-slate-800 font-sans">
-        <div className="p-2.5 bg-slate-100 rounded-lg text-slate-700">
-          <span className="text-xs uppercase font-bold text-slate-500 block mb-1">Eredeti Szöveg:</span>
-          {p.originalText}
-        </div>
-        
-        {/* Track change cards */}
-        <div className="space-y-1.5 pl-3 border-l-2 border-slate-300">
-          {p.suggestions.map((sug) => (
-            <div key={sug.id} className="text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className="font-bold text-slate-900 bg-slate-200 px-1.5 py-0.2 rounded-xs select-none">
-                  {sug.reviewer}
-                </span>
-                <span className={`px-1.5 py-0.2 font-semibold rounded-sm text-[9px] uppercase ${
-                  sug.type === 'modify' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                  sug.type === 'delete' ? 'bg-red-50 text-red-750 border border-red-200' :
-                  sug.type === 'insert' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                  'bg-blue-50 text-blue-750 border border-blue-200'
-                }`}>
-                  {sug.type === 'modify' ? 'Cserélendő kód/szöveg' :
-                   sug.type === 'delete' ? 'Törlendő' :
-                   sug.type === 'insert' ? 'Beszúrandó' :
-                   'Megjegyzés'}
-                </span>
-              </div>
-
-              {sug.type === 'modify' && (
-                <div className="mt-1 space-y-1">
-                  <div className="line-through text-red-700 font-medium">Mit cserélünk: "{sug.highlightedText}"</div>
-                  <div className="text-emerald-700 font-extrabold flex items-center gap-1">
-                    <CornerDownRight className="w-3.5 h-3.5" /> Javasolt szöveg: "{sug.suggestedText}"
-                  </div>
-                </div>
-              )}
-
-              {sug.type === 'delete' && (
-                <div className="line-through text-red-600 font-medium mt-1">Eltávolítandó: "{sug.highlightedText}"</div>
-              )}
-
-              {sug.type === 'insert' && (
-                <div className="text-emerald-700 font-extrabold mt-1">Hozzáadandó: "{sug.suggestedText}"</div>
-              )}
-
-              {sug.comment && (
-                <p className="text-[11px] text-slate-600 bg-amber-50/50 p-1.5 rounded-md border border-amber-100/60 italic mt-1 pb-1">
-                  💡 Indoklás: {sug.comment}
-                </p>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+  const confirmFinishReview = () => {
+    if (!activeDoc) return;
+    onSetStatus(activeDoc.id, 'reviewed');
+    setActiveDoc(null);
+    setShowFinishConfirm(false);
+    setSuccessMessage('A dokumentumot sikeresen továbbítottuk a döntéshozó elé!');
+    setTimeout(() => {
+      setSuccessMessage(null);
+    }, 5000);
   };
 
   return (
@@ -151,7 +284,7 @@ export default function VelemenyezoView({ documents, currentUser, onAddSuggestio
           <div className="bg-white border border-slate-200 shadow-md rounded-2xl p-6">
             <h2 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
               <FileText className="w-5 h-5 text-slate-800" />
-              Véleményezésre Váró Várólista ({inReviewDocs.length})
+              Véleményezésre váró dokumentumok ({inReviewDocs.length})
             </h2>
 
             {inReviewDocs.length === 0 ? (
@@ -171,7 +304,6 @@ export default function VelemenyezoView({ documents, currentUser, onAddSuggestio
                       key={doc.id}
                       onClick={() => {
                         setActiveDoc(doc);
-                        setActiveParagraphId(null);
                       }}
                       className={`p-4 border rounded-xl transition-all cursor-pointer text-left ${
                         isSelected
@@ -183,12 +315,80 @@ export default function VelemenyezoView({ documents, currentUser, onAddSuggestio
                       <p className="text-[10px] text-slate-500 font-medium mt-1">
                         Beterjesztő: {doc.creatorName}
                       </p>
-                      <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-100 text-[9px] text-slate-400">
-                        <span>{new Date(doc.createdAt).toLocaleDateString('hu-HU')}</span>
-                        <span className="bg-slate-100 font-bold text-slate-700 px-1.5 py-0.5 rounded-sm">
+                      <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-100 text-[9px] text-slate-400 font-medium">
+                        <div className="flex flex-wrap items-center gap-1.5 font-medium">
+                          <span>Beterjesztve: {new Date(doc.createdAt).toLocaleDateString('hu-HU')}</span>
+                          {doc.reviewDeadline && (
+                            <>
+                              <span className="text-red-700 font-bold bg-red-50 border border-red-100 px-1.5 py-0.5 rounded-sm shrink-0 select-none">
+                                ⏱️ Határidő{doc.isDeadlineExtended ? ' (meghosszabbított)' : ''}: {new Date(doc.reviewDeadline).toLocaleDateString('hu-HU')}
+                              </span>
+                              {doc.extensionCount && doc.extensionCount > 0 ? (
+                                <span className="text-amber-700 font-bold bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-sm shrink-0 select-none">
+                                  Meghosszabbítva: {doc.extensionCount} alkalommal
+                                </span>
+                              ) : null}
+                            </>
+                          )}
+                        </div>
+                        <span className="bg-slate-100 font-bold text-slate-700 px-1.5 py-0.5 rounded-sm shrink-0">
                           {doc.paragraphs.length} bekezdés
                         </span>
                       </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Értesítések: Jóváhagyott / Lezárt folyamatok */}
+          <div className="bg-white border border-slate-200 shadow-md rounded-2xl p-6">
+            <h2 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2 select-none">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 animate-pulse shrink-0" />
+              Értesítések: Lezárt Folyamatok ({approvedDocs.length})
+            </h2>
+
+            {approvedDocs.length === 0 ? (
+              <div className="text-center py-6 bg-slate-50 rounded-xl border border-slate-100 text-[11px] text-slate-400">
+                Nincs még lezárt vagy jóváhagyott dokumentum.
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
+                {approvedDocs.map((doc) => {
+                  const isSelected = activeDoc?.id === doc.id;
+                  
+                  // Check if this reviewer left any suggestions in this document
+                  const hasMySuggestion = doc.paragraphs.some((p) =>
+                    p.suggestions.some((s) => s.reviewer === currentUser.name)
+                  );
+
+                  return (
+                    <div
+                      key={doc.id}
+                      onClick={() => setActiveDoc(doc)}
+                      className={`p-3 border rounded-xl transition-all cursor-pointer text-left ${
+                        isSelected
+                          ? 'border-emerald-600 bg-emerald-50/15 shadow-xs ring-1 ring-emerald-650/20'
+                          : 'border-slate-200 hover:border-emerald-250 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-1.5 mb-1">
+                        <h3 className="text-xs font-bold text-slate-950 truncate flex-1">{doc.title}</h3>
+                        <span className="shrink-0 bg-emerald-50 text-emerald-700 font-extrabold px-1.5 py-0.5 rounded-sm text-[8px] uppercase border border-emerald-200 select-none">
+                          Kész & Jóváhagyva
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 font-medium">Beterjesztő: {doc.creatorName}</p>
+
+                      {hasMySuggestion ? (
+                        <div className="mt-1.5 bg-blue-50 border border-blue-100 rounded-md p-1.5 text-[9px] text-blue-800 font-bold flex items-center gap-1 select-none">
+                          <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                          <span>Ön is közreműködött ezen a dokumentumon!</span>
+                        </div>
+                      ) : (
+                        <p className="text-[9px] text-slate-400 mt-1">Összesített vállalati archívum</p>
+                      )}
                     </div>
                   );
                 })}
@@ -205,208 +405,179 @@ export default function VelemenyezoView({ documents, currentUser, onAddSuggestio
             <p className="text-[11px] text-slate-300 leading-relaxed text-left">
               A korrektúrázás során a javaslatokat precízen rögzítse. A "Jóváhagyó" szerepkörű vezető fogja látni a javasolt módosításokat egyesével, és lehetősége lesz elfogadni vagy elutasítani azokat.
             </p>
+            {activeDoc && !activeDoc.originalDocxBase64 && (
+              <div className="mt-3 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[10px] text-amber-300">
+                ⚠️ Ennek a dokumentumnak nincs meg az eredeti Word formázása (korábban vagy sablonból lett létrehozva). Kérjük, hogy a teljes minőség érdekében töltse fel újra a Beterjesztő felületen!
+              </div>
+            )}
           </div>
         </div>
 
         {/* Right 2 columns: Active Workspace Layout */}
         <div className="lg:col-span-2">
           {activeDoc ? (
-            <div className="bg-white border border-slate-200 shadow-md rounded-2xl p-6" id="reviewer-document-board">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-6">
-                <div>
-                  <h2 className="text-lg font-extrabold text-slate-950 flex items-center gap-2">
-                    <Edit3 className="w-5 h-5 text-slate-800 animate-pulse" />
-                    Korrektúra: {activeDoc.title}
+            <div className="space-y-4">
+              {/* Header above the card */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-left">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl font-bold select-none">
+                    {activeDoc.status === 'approved' ? '🏆' : '✏️'}
+                  </span>
+                  <h2 className="text-xl font-bold text-slate-900 tracking-tight">
+                    {activeDoc.status === 'approved' ? 'Végső Véglegesített Szöveg - ' : 'Szöveg Tartalma - '}
+                    {activeDoc.title.endsWith('.docx') ? activeDoc.title : `${activeDoc.title}.docx`}
                   </h2>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Kattintson egy bekezdésre a korrektúra módosító doboz megnyitásához.
-                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleFinishReview(activeDoc.id)}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
-                >
-                  <Send className="w-4 h-4" />
-                  Korrektúra Beküldése
-                </button>
+                {activeDoc.status !== 'approved' && (
+                  <button
+                    type="button"
+                    onClick={() => handleFinishReview(activeDoc.id)}
+                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 select-none text-white font-bold rounded-xl flex items-center gap-2.5 cursor-pointer transition-all shadow-sm active:scale-98 animate-pulse"
+                  >
+                    <Send className="w-4 h-4 shrink-0 text-white" />
+                    <div className="text-left font-sans font-bold leading-tight text-[10px] tracking-wider uppercase text-white">
+                      <div>KORREKTÚRA</div>
+                      <div>BEKÜLDÉSE</div>
+                    </div>
+                  </button>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-6 text-left">
-                {/* Visual editor column */}
-                <div className="md:col-span-3 space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Szerkesztő Nézet (Kattintson a javításhoz)
-                  </h3>
-
-                  <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
-                    {activeDoc.paragraphs.map((p, idx) => {
-                      const isModifyingThis = activeParagraphId === p.id;
-                      const hasSuggestions = p.suggestions.length > 0;
-
-                      return (
-                        <div
-                          key={p.id}
-                          onClick={() => handleSelectParagraph(p)}
-                          className={`p-4 border rounded-xl transition-all relative group cursor-pointer ${
-                            isModifyingThis
-                              ? 'border-slate-950 bg-slate-50 ring-1 ring-slate-950/20'
-                              : hasSuggestions
-                              ? 'border-amber-200 bg-amber-50/10 hover:border-amber-300'
-                              : 'border-slate-200 hover:border-slate-350 bg-white'
-                          }`}
-                        >
-                          <span className="absolute top-2.5 right-2.5 text-[9px] font-mono text-slate-400 font-bold uppercase select-none opacity-50 group-hover:opacity-100">
-                            Bekezdés #{idx + 1}
-                          </span>
-                          
-                          <div className="text-sm leading-relaxed pr-10">
-                            {renderInteractiveText(p)}
-                          </div>
-
-                          {!hasSuggestions && !isModifyingThis && (
-                            <span className="text-[10px] text-slate-400 font-medium inline-block mt-2 underline opacity-0 group-hover:opacity-100 transition-opacity">
-                              Korrektúra hozzáadása...
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
+              {/* Card item */}
+              <div
+                onDragEnter={handleDrag}
+                onDragOver={handleDrag}
+                onDragLeave={handleDrag}
+                onDrop={handleDrop}
+                className={`bg-white border text-left shadow-lg rounded-2xl p-6 transition-all ${
+                  dragActive ? 'border-emerald-500 bg-emerald-50/20' : 'border-slate-200'
+                }`}
+                id="reviewer-document-board"
+              >
+                {/* Header info */}
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-lg font-extrabold text-slate-950 leading-tight">
+                      {activeDoc.title.replace('.docx', '')}
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium mt-1">
+                      Beküldő: {activeDoc.creatorName || 'Kovács Péter'} • {activeDoc.status === 'approved' ? 'Sikeresen visszajelzett és Jóváhagyott' : 'Véleményezésre vár'}
+                    </p>
+                  </div>
+                  <div>
+                    {activeDoc.status === 'approved' ? (
+                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-250 rounded-lg px-3 py-1.5 text-xs font-bold whitespace-nowrap select-none flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5" />
+                        Jóváhagyott & Véglegesített
+                      </span>
+                    ) : (
+                      <span className="bg-amber-50 text-amber-600 border border-amber-200/50 rounded-lg px-3 py-1 text-xs font-bold whitespace-nowrap select-none">
+                        Aktív dokumentum
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {/* Annotation Tool Window column */}
-                <div className="md:col-span-2">
-                  {activeParagraphId ? (
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 sticky top-20 shadow-xs animate-fade-in" id="annotation-box">
-                      <div className="flex justify-between items-center mb-3">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-950 flex items-center gap-1">
-                          <PlusCircle className="w-4 h-4 text-slate-800" />
-                          Korrektúraszék
-                        </h4>
-                        <button
-                          onClick={() => setActiveParagraphId(null)}
-                          className="text-[10px] bg-slate-200 hover:bg-slate-300 px-2 py-0.5 rounded text-slate-600 font-bold transition-all cursor-pointer"
-                        >
-                          Mégse
-                        </button>
+                {/* Deadline & Comment for the Reviewer */}
+                {(activeDoc.reviewDeadline || activeDoc.comment) && (
+                  <div className="mt-4 p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2 text-xs">
+                    {activeDoc.reviewDeadline && (
+                      <div className="flex flex-wrap items-center gap-1.5 text-slate-700">
+                        <span className="font-bold">
+                          ⏱️ Véleményezési határidő{activeDoc.isDeadlineExtended ? ' (meghosszabbított)' : ''}:
+                        </span>
+                        <span className="font-semibold text-red-700 bg-red-50 border border-red-100 px-2 py-0.5 rounded-md">
+                          {new Date(activeDoc.reviewDeadline).toLocaleDateString('hu-HU')}
+                        </span>
+                        {activeDoc.extensionCount && activeDoc.extensionCount > 0 ? (
+                          <span className="font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md shrink-0 select-none">
+                            Meghosszabbítva: {activeDoc.extensionCount} alkalommal
+                          </span>
+                        ) : null}
                       </div>
+                    )}
+                    {activeDoc.comment && (
+                      <div className="text-slate-700">
+                        <span className="font-bold block mb-1">💡 Beterjesztő megjegyzése:</span>
+                        <p className="bg-white border border-slate-150 p-2.5 rounded-lg italic text-slate-600">
+                          {activeDoc.comment}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                      <form onSubmit={submitSuggestion} className="space-y-3.5">
-                        {/* Action Type */}
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                            Művelet Típusa
-                          </label>
-                          <div className="grid grid-cols-2 gap-1.5" id="sug-type-toggle">
-                            <button
-                              type="button"
-                              onClick={() => { setSugType('modify'); setSuggestedText(''); }}
-                              className={`py-1.5 px-1 text-[10px] font-bold border rounded-lg transition-all cursor-pointer ${
-                                sugType === 'modify' ? 'bg-slate-950 text-white border-slate-950' : 'bg-white text-slate-700 border-slate-200'
-                              }`}
-                            >
-                              Módosítás
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { setSugType('delete'); setSuggestedText(''); }}
-                              className={`py-1.5 px-1 text-[10px] font-bold border rounded-lg transition-all cursor-pointer ${
-                                sugType === 'delete' ? 'bg-slate-950 text-white border-slate-950' : 'bg-white text-slate-700 border-slate-200'
-                              }`}
-                            >
-                              Törlés
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { setSugType('insert'); setSuggestedText(''); }}
-                              className={`py-1.5 px-1 text-[10px] font-bold border rounded-lg transition-all cursor-pointer ${
-                                sugType === 'insert' ? 'bg-slate-950 text-white border-slate-950' : 'bg-white text-slate-700 border-slate-200'
-                              }`}
-                            >
-                              Beszúrás
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { setSugType('comment'); setSuggestedText(''); }}
-                              className={`py-1.5 px-1 text-[10px] font-bold border rounded-lg transition-all cursor-pointer ${
-                                sugType === 'comment' ? 'bg-slate-950 text-white border-slate-950' : 'bg-white text-slate-700 border-slate-200'
-                              }`}
-                            >
-                              Megjegyzés
-                            </button>
-                          </div>
-                        </div>
+                <div className="border-t border-slate-100 my-4" />
 
-                        {/* Text being targeted */}
-                        {sugType !== 'insert' && sugType !== 'comment' && (
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                              Kijelölt vagy cserélendő szöveg
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              value={highlightedText}
-                              onChange={(e) => setHighlightedText(e.target.value)}
-                              className="block w-full px-2 py-1.5 bg-white border border-slate-300 text-slate-900 rounded-md text-xs focus:ring-1 focus:ring-slate-950 focus:border-slate-950"
-                            />
-                          </div>
-                        )}
+                {/* Clean, spacious single column document preview canvas */}
+                <div className="max-w-4xl mx-auto space-y-4 select-text">
+                  <div className="bg-slate-50 border border-slate-200/50 rounded-xl p-4 flex items-center justify-between gap-4 mb-4 select-none">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                      <span className="w-2 h-2 bg-emerald-500 rounded-full shrink-0" />
+                      📖 Olvasó mód • Beépített Mammoth Text Extractor
+                    </span>
+                  </div>
 
-                        {/* New text proposal */}
-                        {sugType !== 'delete' && sugType !== 'comment' && (
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                              Javasolt új szöveg
-                            </label>
-                            <textarea
-                              required
-                              rows={2}
-                              value={suggestedText}
-                              onChange={(e) => setSuggestedText(e.target.value)}
-                              placeholder={
-                                sugType === 'insert'
-                                  ? 'Írja be az itt beszúrandó új szöveget...'
-                                  : 'Írja be a csereszöveget...'
-                              }
-                              className="block w-full px-2 py-1.5 bg-white border border-slate-300 text-slate-900 rounded-md text-xs focus:ring-1 focus:ring-slate-950 focus:border-slate-950"
-                            />
-                          </div>
-                        )}
-
-                        {/* Justification Comment */}
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                            Indoklás / Bizottsági Széljegyző
-                          </label>
-                          <textarea
-                            rows={2}
-                            value={comment}
-                            onChange={(e) => setComment(e.target.value)}
-                            placeholder="Miért szükséges ez a módosítás? (opcionális)"
-                            className="block w-full px-2 py-1.5 bg-white border border-slate-300 text-slate-900 rounded-md text-xs focus:ring-1 focus:ring-slate-950 focus:border-slate-950"
-                          />
-                        </div>
-
-                        <button
-                          type="submit"
-                          className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
-                        >
-                          Korrektúra Rögzítése
-                        </button>
-                      </form>
+                  <div className="bg-white border border-slate-200 shadow-xs rounded-2xl p-6 text-left max-h-[275px] overflow-y-auto pr-2">
+                    <div className="text-slate-800 font-sans text-sm md:text-base leading-relaxed space-y-4 whitespace-pre-wrap">
+                      {activeDoc.paragraphs.map((p) => p.currentText || p.originalText).join('\n\n')}
                     </div>
-                  ) : (
-                    <div className="border border-dashed border-slate-200 rounded-xl p-6 text-center text-slate-400">
-                      <MessageSquare className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                      <p className="text-xs font-semibold">Nincs kiválasztott bekezdés</p>
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        Kattintson az egyik bekezdésre a bal oldalon inline módosítás kezdeményezéséhez.
-                      </p>
-                    </div>
-                  )}
+                  </div>
                 </div>
+              </div>
+
+              {/* Bottom action buttons */}
+              <div className="flex justify-center items-center gap-6 mt-4">
+                {/* File Upload Selector Hidden */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".docx,.txt"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+
+                {activeDoc.status === 'approved' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadTxt(activeDoc)}
+                      className="px-6 py-2.5 bg-white border border-slate-350 hover:bg-slate-50 text-slate-900 font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all shadow-sm flex items-center justify-center min-w-[180px]"
+                    >
+                      <Download className="w-4 h-4 mr-2 text-slate-600" />
+                      Letöltés tiszta .TXT
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadDocx(activeDoc)}
+                      className="px-6 py-2.5 bg-slate-950 hover:bg-slate-900 text-white font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all shadow-md flex items-center justify-center min-w-[180px]"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Véglegesített .DOCX Letöltése
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadFile(activeDoc)}
+                      className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-98 text-white font-bold text-sm tracking-wide rounded-xl cursor-pointer transition-all shadow-md flex items-center justify-center min-w-[160px]"
+                    >
+                      <Eye className="w-4 h-4 mr-2" />
+                      Eredeti Fájl Letöltése
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold text-sm tracking-wide rounded-xl cursor-pointer transition-all shadow-md flex items-center justify-center min-w-[160px]"
+                    >
+                      <UploadCloud className="w-4 h-4 mr-2" />
+                      Korrektúrázott fájl feltöltése
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ) : (
@@ -420,6 +591,65 @@ export default function VelemenyezoView({ documents, currentUser, onAddSuggestio
           )}
         </div>
       </div>
+
+      {/* Success Notification Banner */}
+      {successMessage && (
+        <div className="fixed bottom-6 right-6 bg-slate-900 border border-slate-800 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 z-55 animate-fade-in transition-all">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0" />
+          <span className="text-xs font-bold font-sans">{successMessage}</span>
+          <button 
+            onClick={() => setSuccessMessage(null)}
+            className="ml-2 text-slate-400 hover:text-white font-bold text-xs font-mono"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Error Notification Banner */}
+      {errorMessage && (
+        <div className="fixed bottom-6 right-6 bg-red-955 border border-red-900 text-red-200 px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 z-55 animate-fade-in transition-all">
+          <span className="w-2.5 h-2.5 rounded-full bg-red-400 shrink-0" />
+          <span className="text-xs font-bold font-sans">{errorMessage}</span>
+          <button 
+            onClick={() => setErrorMessage(null)}
+            className="ml-2 text-slate-400 hover:text-white font-bold text-xs font-mono"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Custom Finish Review Confirmation Modal */}
+      {showFinishConfirm && activeDoc && (
+        <div className="fixed inset-0 bg-slate-950/65 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setShowFinishConfirm(false)}>
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-xl max-w-md w-full p-6 text-left" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-slate-900 mb-2 font-sans flex items-center gap-2">
+              📝 Korrektúra Befejezése és Küldése
+            </h3>
+            <p className="text-xs text-slate-600 mb-4 font-sans leading-relaxed">
+              Biztosan befejezi a véleményezést a(z) <span className="font-extrabold text-slate-900">"{activeDoc.title}"</span> dokumentumon? A bejegyzett javítási javaslatok így átkerülnek a döntéshozó Jóváhagyó elé elbírálásra.
+            </p>
+            <div className="flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowFinishConfirm(false)}
+                className="px-4 py-2 border border-slate-200 hover:border-slate-300 text-xs font-bold rounded-lg text-slate-700 bg-white cursor-pointer select-none"
+              >
+                Mégse, folytatom
+              </button>
+              <button
+                type="button"
+                onClick={confirmFinishReview}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white rounded-lg cursor-pointer select-none"
+              >
+                Igen, befejezem és küldöm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

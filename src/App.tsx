@@ -67,8 +67,27 @@ export default function App() {
     saveStoredUsers(updated);
   };
 
+  // Admin: Update/Maintain an existing user's details
+  const handleUpdateUser = (updatedUser: User) => {
+    const updated = users.map((u) => (u.id === updatedUser.id ? updatedUser : u));
+    setUsers(updated);
+    saveStoredUsers(updated);
+
+    // If the administrator edited their own profile, update active session!
+    if (currentUser && currentUser.id === updatedUser.id) {
+      setCurrentUser(updatedUser);
+      localStorage.setItem('review_session', JSON.stringify(updatedUser));
+    }
+  };
+
   // Beterjeszto: Submit a draft document for review
-  const handleAddDocument = (title: string, paragraphs: Paragraph[]) => {
+  const handleAddDocument = (
+    title: string,
+    paragraphs: Paragraph[],
+    originalDocxBase64?: string,
+    reviewDeadline?: string,
+    comment?: string
+  ) => {
     if (!currentUser) return;
 
     const newDoc: Document = {
@@ -79,13 +98,18 @@ export default function App() {
       createdAt: new Date().toISOString(),
       status: 'under_review', // Automatically goes to review queue
       paragraphs,
+      originalDocxBase64,
+      reviewDeadline,
+      comment,
       history: [
         {
           id: `h-${Date.now()}-1`,
           userId: currentUser.id,
           userName: currentUser.name,
           userRole: currentUser.role,
-          action: 'Dokumentum feltöltve és beterjesztve véleményezésre.',
+          action: `Dokumentum feltöltve és beterjesztve véleményezésre.${
+            reviewDeadline ? ` Határidő: ${reviewDeadline}.` : ''
+          }`,
           timestamp: new Date().toISOString(),
         }
       ]
@@ -166,6 +190,71 @@ export default function App() {
       return {
         ...doc,
         status,
+        history: [...doc.history, newHistoryLog],
+      };
+    });
+
+    setDocuments(updatedDocs);
+    saveStoredDocuments(updatedDocs);
+  };
+
+  // Velemenyezo: Update document paragraphs dynamically (e.g. from uploaded Word doc)
+  const handleUpdateDocumentParagraphs = (docId: string, paragraphs: Paragraph[], originalDocxBase64?: string) => {
+    if (!currentUser) return;
+
+    const updatedDocs = documents.map((doc) => {
+      if (doc.id !== docId) return doc;
+
+      const newHistoryLog = {
+        id: `h-${Date.now()}-update-paragraphs`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: 'A valós Word-dokumentum szövege beolvasásra és szinkronizálásra került.',
+        timestamp: new Date().toISOString(),
+      };
+
+      return {
+        ...doc,
+        paragraphs,
+        originalDocxBase64: originalDocxBase64 || doc.originalDocxBase64,
+        history: [...doc.history, newHistoryLog],
+      };
+    });
+
+    setDocuments(updatedDocs);
+    saveStoredDocuments(updatedDocs);
+  };
+
+  // Beterjeszto: Delete a submitted document
+  const handleDeleteDocument = (docId: string) => {
+    if (!currentUser) return;
+    const updatedDocs = documents.filter((doc) => doc.id !== docId);
+    setDocuments(updatedDocs);
+    saveStoredDocuments(updatedDocs);
+  };
+
+  // Beterjeszto: Extend the review deadline for a document
+  const handleExtendDeadline = (docId: string, newDeadline: string) => {
+    if (!currentUser) return;
+
+    const updatedDocs = documents.map((doc) => {
+      if (doc.id !== docId) return doc;
+
+      const newHistoryLog = {
+        id: `h-${Date.now()}-extend-deadline`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: `Véleményezési határidő meghosszabbítva a következő dátumra: ${newDeadline}`,
+        timestamp: new Date().toISOString(),
+      };
+
+      return {
+        ...doc,
+        reviewDeadline: newDeadline,
+        isDeadlineExtended: true,
+        extensionCount: (doc.extensionCount || 0) + 1,
         history: [...doc.history, newHistoryLog],
       };
     });
@@ -330,6 +419,7 @@ export default function App() {
             users={users}
             onAddUser={handleAddUser}
             onDeleteUser={handleDeleteUser}
+            onUpdateUser={handleUpdateUser}
             currentUser={currentUser}
           />
         );
@@ -339,6 +429,8 @@ export default function App() {
             documents={documents}
             currentUser={currentUser}
             onAddDocument={handleAddDocument}
+            onDeleteDocument={handleDeleteDocument}
+            onExtendDeadline={handleExtendDeadline}
           />
         );
       case 'velemenyezo':
@@ -348,6 +440,7 @@ export default function App() {
             currentUser={currentUser}
             onAddSuggestion={handleAddSuggestion}
             onSetStatus={handleSetStatus}
+            onUpdateParagraphs={handleUpdateDocumentParagraphs}
           />
         );
       case 'jovahagyo':

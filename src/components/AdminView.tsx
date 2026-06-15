@@ -5,22 +5,72 @@
 
 import React, { useState } from 'react';
 import { User, UserRole } from '../types';
-import { Users, Plus, Shield, ShieldAlert, Key, Mail, Trash2, Calendar, HardDrive, CheckCircle } from 'lucide-react';
+import { Users, Plus, Shield, ShieldAlert, Key, Mail, Trash2, Calendar, HardDrive, CheckCircle, Edit } from 'lucide-react';
 
 interface AdminViewProps {
   users: User[];
   onAddUser: (user: Omit<User, 'id' | 'createdAt'>) => void;
   onDeleteUser: (userId: string) => void;
+  onUpdateUser: (user: User) => void;
   currentUser: User;
 }
 
-export default function AdminView({ users, onAddUser, onDeleteUser, currentUser }: AdminViewProps) {
+export default function AdminView({ users, onAddUser, onDeleteUser, onUpdateUser, currentUser }: AdminViewProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('velemenyezo');
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+
+  // States for Editing/Maintenance
+  const [userToEdit, setUserToEdit] = useState<User | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [editRole, setEditRole] = useState<UserRole>('velemenyezo');
+  const [editErrorMsg, setEditErrorMsg] = useState<string | null>(null);
+
+  const handleStartEdit = (user: User) => {
+    setUserToEdit(user);
+    setEditName(user.name);
+    setEditEmail(user.email);
+    setEditPassword(user.password || '');
+    setEditRole(user.role);
+    setEditErrorMsg(null);
+  };
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setEditErrorMsg(null);
+
+    if (!editName.trim() || !editEmail.trim() || !editPassword.trim()) {
+      setEditErrorMsg('Minden mezőt ki kell tölteni!');
+      return;
+    }
+
+    if (users.some((u) => u.id !== userToEdit?.id && u.email.toLowerCase() === editEmail.trim().toLowerCase())) {
+      setEditErrorMsg('Ez az e-mail cím már használatban van másik felhasználónál!');
+      return;
+    }
+
+    if (editPassword.length < 6) {
+      setEditErrorMsg('A jelszónak legalább 6 karakterből kell állnia.');
+      return;
+    }
+
+    if (userToEdit) {
+      onUpdateUser({
+        ...userToEdit,
+        name: editName.trim(),
+        email: editEmail.trim().toLowerCase(),
+        role: editRole,
+        password: editPassword.trim(),
+      });
+      setUserToEdit(null);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -260,21 +310,24 @@ export default function AdminView({ users, onAddUser, onDeleteUser, currentUser 
                       </td>
                       <td className="px-4 py-3.5 font-mono text-slate-500">{u.password || 'n/a'}</td>
                       <td className="px-4 py-3.5 text-right">
-                        {isCurrent ? (
-                          <span className="text-[10px] text-slate-400 italic">Bejelentkezve</span>
-                        ) : (
+                        <div className="flex items-center justify-end gap-1">
                           <button
-                            onClick={() => {
-                              if (confirm(`Biztosan törölni szeretné a(z) "${u.name}" nevű felhasználót?`)) {
-                                onDeleteUser(u.id);
-                              }
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-                            title={isSystemDefault ? "Gyári teszt fiók" : "Törlés"}
+                            onClick={() => handleStartEdit(u)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
+                            title="Karbantartás / Szerkesztés"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Edit className="w-4 h-4" />
                           </button>
-                        )}
+                          {!isCurrent && (
+                            <button
+                              onClick={() => setUserToDelete(u)}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                              title={isSystemDefault ? "Gyári teszt fiók" : "Törlés"}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -295,6 +348,155 @@ export default function AdminView({ users, onAddUser, onDeleteUser, currentUser 
           </div>
         </div>
       </div>
+
+      {/* Custom Delete User Confirmation Modal */}
+      {userToDelete && (
+        <div className="fixed inset-0 bg-slate-950/65 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setUserToDelete(null)}>
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-xl max-w-md w-full p-6 text-left" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-slate-900 mb-2 font-sans flex items-center gap-2 text-red-600">
+               ⚠️ Felhasználófiók Végleges Törlése
+            </h3>
+            <p className="text-xs text-slate-600 mb-4 font-sans leading-relaxed">
+              Biztosan törölni szeretné <span className="font-extrabold text-slate-900">"{userToDelete.name}"</span> ({getRoleLabel(userToDelete.role)}) hozzáférését? A törlés hatására ez a felhasználó azonnal ki indexelt lesz a rendszerből.
+            </p>
+            <div className="flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setUserToDelete(null)}
+                className="px-4 py-2 border border-slate-200 hover:border-slate-300 text-xs font-bold rounded-lg text-slate-700 bg-white cursor-pointer select-none"
+              >
+                Mégse, megtartom
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteUser(userToDelete.id);
+                  setUserToDelete(null);
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-xs font-bold text-white rounded-lg cursor-pointer select-none"
+              >
+                Igen, törlöm végleg
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Edit User Maintenance Modal */}
+      {userToEdit && (
+        <div className="fixed inset-0 bg-slate-950/65 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setUserToEdit(null)}>
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-xl max-w-md w-full p-6 text-left" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-slate-900 mb-2 font-sans flex items-center gap-2">
+               ✏️ Felhasználói Fiók Karbantartása
+            </h3>
+            
+            <p className="text-xs text-slate-500 mb-4 font-sans leading-normal">
+              Módosítsa a felhasználói fiók belépési adatait és jogosultsági szintjét.
+            </p>
+
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              {editErrorMsg && (
+                <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded-xl text-xs flex items-start gap-1.5 font-sans">
+                  <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span>{editErrorMsg}</span>
+                </div>
+              )}
+
+              {/* Edit Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 font-sans">
+                  Teljes Név
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="block w-full px-3 py-2 border border-slate-300 bg-white text-slate-900 rounded-lg text-sm focus:outline-hidden focus:ring-1 focus:ring-slate-950 focus:border-slate-950 font-sans font-medium"
+                />
+              </div>
+
+              {/* Edit Email */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 font-sans">
+                  E-mail Cím (Azonosító)
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                  <input
+                    type="email"
+                    required
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="block w-full pl-9 pr-3 py-2 border border-slate-300 bg-white text-slate-900 rounded-lg text-sm focus:outline-hidden focus:ring-1 focus:ring-slate-950 focus:border-slate-950 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Edit Password */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 font-sans">
+                  Jelszó (Módosítás vagy megerősítés)
+                </label>
+                <div className="relative">
+                  <Key className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    required
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                    placeholder="Legalább 6 karakter"
+                    className="block w-full pl-9 pr-3 py-2 border border-slate-300 bg-white text-slate-900 rounded-lg text-sm focus:outline-hidden focus:ring-1 focus:ring-slate-950 focus:border-slate-950 font-mono font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Edit Role */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 font-sans">
+                  Szerepkör
+                </label>
+                <select
+                  value={editRole}
+                  onChange={(e) => setEditRole(e.target.value as UserRole)}
+                  className="block w-full px-3 py-2 border border-slate-300 bg-white text-slate-900 rounded-lg text-sm focus:outline-hidden focus:ring-1 focus:ring-slate-950 focus:border-slate-950 font-sans font-medium"
+                >
+                  <option value="beterjeszto">Beterjesztő (Word feltöltő)</option>
+                  <option value="velemenyezo">Véleményező (Korrektúrázó)</option>
+                  <option value="jovahagyo">Jóváhagyó (Véglegesítő)</option>
+                  <option value="admin">Rendszergazda (Admin)</option>
+                </select>
+                {userToEdit.id === currentUser.id && editRole !== 'admin' && (
+                  <p className="text-[10.5px] text-amber-600 bg-amber-50 rounded-md border border-amber-200/50 p-2 mt-1.5 font-sans font-medium leading-relaxed">
+                    ⚠️ Figyelem: Saját jogosultságának módosításával azonnal elveszítheti a rendszergazdai hozzáférését és kijelentkezik az adminisztrátori felületről!
+                  </p>
+                )}
+                {(userToEdit.id === '1' || userToEdit.id === '2' || userToEdit.id === '3' || userToEdit.id === '4') && (
+                  <p className="text-[10px] text-slate-400 mt-1 font-sans leading-normal">
+                    Ez egy gyári teszt fiók. Módosítása után a belépésnél az új adatok lesznek érvényesek.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setUserToEdit(null)}
+                  className="px-4 py-2 border border-slate-200 hover:border-slate-300 text-xs font-bold rounded-lg text-slate-700 bg-white cursor-pointer select-none font-sans"
+                >
+                  Mégse
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-slate-950 hover:bg-slate-900 text-xs font-bold text-white rounded-lg cursor-pointer select-none font-sans uppercase tracking-wider"
+                >
+                  Módosítások mentése
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

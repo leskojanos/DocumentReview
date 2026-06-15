@@ -4,6 +4,6 @@ dist/
 coverage/
 .DS_Store
 *.log
+*.docx
 .env*
 !.env.example
-xx*

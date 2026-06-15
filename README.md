@@ -1,6 +1,6 @@
-# DocumentReview
+# DocuReview - Secure Web Document Review and Correction System
 
-**DocumentReview/(DocuReview)** is an enterprise-grade, role-based web application designed for reviewing, correcting, and approving internal company documents (policies, contracts, agreements, and drafts). It streamlines the collaboration process, replacing messy email-based version tracking with a solid, structured workflow.
+**DocuReview** is an enterprise-grade, role-based web application designed for reviewing, correcting, and approving internal company documents (policies, contracts, agreements, and drafts). It streamlines the collaboration process, replacing messy email-based version tracking with a solid, structured workflow.
 
 The application is fully containerized and optimized for deployment on **VPS environments using Docker Compose**.
 
@@ -119,6 +119,39 @@ docker compose up --build -d
 
 The application will build, configure itself, and run smoothly in detached mode on **`http://<YOUR_VPS_IP>:3000`**!
 
+---
+
+## 🛠️ Managing GitHub Tags & Releases via CLI
+
+To control versioning for your repository at `https://github.com/leskojanos/DocumentReview`, use these git and GitHub CLI (`gh`) commands.
+
+### 1. Creating and Pushing a Tag
+```bash
+# Create a local annotated version tag
+git tag -a v1.0.0 -m "First release - VPS Docker support ready"
+
+# Push the tag to your remote GitHub repository
+git push origin v1.0.0
+```
+
+### 2. Publishing a GitHub Release from CLI
+Ensure you have the GitHub CLI installed and authenticated (`gh auth login`). Run the following command to ship an official release:
+
+```bash
+gh release create v1.0.0 \
+  --title "Release v1.0.0 (Stable Build)" \
+  --notes "Enterprise-grade web document review system with Docker support and role-based access controls." \
+  --draft=false \
+  --prerelease=false
+```
+
+To automatically attach built assets or compiled distribution files (`dist.zip`) to the release:
+```bash
+gh release create v1.0.0 ./dist/* --title "Release v1.0.0" --notes "Release description..."
+```
+
+---
+
 ## 🛡️ Built-In Test Users (For Quick Access & Testing)
 
 The following system-defined test profiles are available out-of-the-box on the login screen for seamless demonstration of the roles:
@@ -138,4 +171,3 @@ The following system-defined test profiles are available out-of-the-box on the l
 - **Animations:** Motion/React
 - **State & Persistence:** Seamless UI-state saving and cross-device recovery using `localStorage`
 - **Containerization:** Docker multi-stage pipeline + Nginx production server
-
