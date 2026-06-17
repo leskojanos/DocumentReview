@@ -66,18 +66,6 @@ export default function Navbar({ user, onLogout, onShowDockerGuide }: NavbarProp
 
           {/* Connected User Information & Quick Controls */}
           <div className="flex items-center gap-4">
-            <button
-              onClick={onShowDockerGuide}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 hover:text-slate-900 border border-slate-200 rounded-lg transition-colors cursor-pointer"
-              title="Docker & VPS Telepítési Útmutató"
-              id="docker-guide-btn"
-            >
-              <Server className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Docker VPS Útmutató</span>
-            </button>
-
-            <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
-
             <div className="flex flex-col items-end text-right">
               <span className="text-sm font-semibold text-slate-800">{user.name}</span>
               <span className="text-xs text-slate-500 font-medium">{user.email}</span>

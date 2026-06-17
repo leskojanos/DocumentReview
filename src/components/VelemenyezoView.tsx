@@ -7,6 +7,7 @@ import React, { useState, useRef } from 'react';
 // @ts-ignore
 import mammoth from 'mammoth';
 import { Document as DocxGen, Packer, Paragraph as DocxParagraphTag, TextRun } from 'docx';
+import { generateBeautifulDocx } from '../utils/docxFormatter';
 import { Document, Paragraph, Suggestion, User } from '../types';
 import { FileText, Eye, AlertCircle, Sparkles, Check, Edit3, Trash2, PlusCircle, MessageSquare, CornerDownRight, Send, UploadCloud, Download, CheckCircle2, Bell } from 'lucide-react';
 
@@ -62,11 +63,14 @@ export default function VelemenyezoView({ documents, currentUser, onAddSuggestio
       return;
     }
 
+    const isDocx = file.name.toLowerCase().endsWith('.docx') || 
+                    file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
     const processFile = (originalDocxBase64?: string) => {
       const reader = new FileReader();
       reader.onload = async (event) => {
         let extractedText = '';
-        if (file.name.endsWith('.docx')) {
+        if (isDocx) {
           const arrayBuffer = event.target?.result as ArrayBuffer;
           try {
             const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
@@ -107,14 +111,14 @@ export default function VelemenyezoView({ documents, currentUser, onAddSuggestio
         }
       };
 
-      if (file.name.endsWith('.docx')) {
+      if (isDocx) {
         reader.readAsArrayBuffer(file);
       } else {
         reader.readAsText(file);
       }
     };
 
-    if (file.name.endsWith('.docx')) {
+    if (isDocx) {
       const readerBase64 = new FileReader();
       readerBase64.onload = (e) => {
         const dataUrlStr = e.target?.result as string;
@@ -144,7 +148,7 @@ export default function VelemenyezoView({ documents, currentUser, onAddSuggestio
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        const fileName = doc.title.endsWith('.docx') ? doc.title : `${doc.title}.docx`;
+        const fileName = doc.originalFilename || (doc.title.endsWith('.docx') ? doc.title : `${doc.title}.docx`);
         link.download = fileName;
         document.body.appendChild(link);
         link.click();
@@ -157,30 +161,13 @@ export default function VelemenyezoView({ documents, currentUser, onAddSuggestio
     }
 
     try {
-      const docxFile = new DocxGen({
-        sections: [
-          {
-            properties: {},
-            children: doc.paragraphs.map(
-              (p) =>
-                new DocxParagraphTag({
-                  children: [
-                    new TextRun({
-                      text: p.originalText,
-                      size: 24, // 12pt (Word half-points: 24 = 12pt)
-                    }),
-                  ],
-                })
-            ),
-          },
-        ],
-      });
+      const docxFile = generateBeautifulDocx(doc.title, doc.paragraphs.map(p => p.originalText));
 
       Packer.toBlob(docxFile).then((blob) => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        const fileName = doc.title.endsWith('.docx') ? doc.title : `${doc.title}.docx`;
+        const fileName = doc.originalFilename || (doc.title.endsWith('.docx') ? doc.title : `${doc.title}.docx`);
         link.download = fileName;
         document.body.appendChild(link);
         link.click();
@@ -213,32 +200,41 @@ export default function VelemenyezoView({ documents, currentUser, onAddSuggestio
   };
 
   const handleDownloadDocx = (doc: Document) => {
+    if (doc.correctedDocxBase64) {
+      try {
+        const byteCharacters = atob(doc.correctedDocxBase64);
+        const byteNumbers = new Uint8Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const blob = new Blob([byteNumbers], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const baseName = doc.title.endsWith('.docx') ? doc.title.slice(0, -5) : doc.title;
+        const downloadName = doc.correctedFilename || `${baseName}_final.docx`;
+        link.download = downloadName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        return;
+      } catch (err: any) {
+        console.error("Hiba a tárolt véglegesített Word fájl letöltése közben, dinamikus generálásra váltás...", err);
+      }
+    }
+
     try {
-      const docxFile = new DocxGen({
-        sections: [
-          {
-            properties: {},
-            children: doc.paragraphs.map(
-              (p) =>
-                new DocxParagraphTag({
-                  children: [
-                    new TextRun({
-                      text: p.currentText,
-                      size: 24, // 12pt (Word half-points: 24 = 12pt)
-                    }),
-                  ],
-                })
-            ),
-          },
-        ],
-      });
+      const docxFile = generateBeautifulDocx(doc.title, doc.paragraphs.map(p => p.currentText));
 
       Packer.toBlob(docxFile).then((blob) => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
         const baseName = doc.title.endsWith('.docx') ? doc.title.slice(0, -5) : doc.title;
-        link.download = `${baseName}_final.docx`;
+        const downloadName = doc.correctedFilename || `${baseName}_final.docx`;
+        link.download = downloadName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

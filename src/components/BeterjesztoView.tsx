@@ -5,6 +5,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Document as DocxGen, Packer, Paragraph as DocxParagraphTag, TextRun } from 'docx';
+import { generateBeautifulDocx } from '../utils/docxFormatter';
 // @ts-ignore
 import mammoth from 'mammoth';
 import { Document, Paragraph, User } from '../types';
@@ -18,7 +19,9 @@ interface BeterjesztoViewProps {
     paragraphs: Paragraph[],
     originalDocxBase64?: string,
     reviewDeadline?: string,
-    comment?: string
+    comment?: string,
+    originalFilename?: string,
+    correctedFilename?: string
   ) => void;
   onDeleteDocument: (docId: string) => void;
   onExtendDeadline?: (docId: string, newDeadline: string) => void;
@@ -72,6 +75,7 @@ export default function BeterjesztoView({ documents, currentUser, onAddDocument,
   const [viewingDoc, setViewingDoc] = useState<Document | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [originalDocxBase64, setOriginalDocxBase64] = useState<string | undefined>(undefined);
+  const [uploadedFileName, setUploadedFileName] = useState<string | undefined>(undefined);
   const [docIdToDelete, setDocIdToDelete] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -129,13 +133,16 @@ export default function BeterjesztoView({ documents, currentUser, onAddDocument,
       parsed,
       originalDocxBase64,
       reviewDeadline || undefined,
-      comment || undefined
+      comment || undefined,
+      uploadedFileName,
+      uploadedFileName ? `${uploadedFileName.replace(/\.[^/.]+$/, "")}_corr.docx` : undefined
     );
 
     // Reset Form
     setTitle('');
     setContent('');
     setOriginalDocxBase64(undefined);
+    setUploadedFileName(undefined);
     setSelectedTemplateIdx(null);
     setReviewDeadline('');
     setComment('');
@@ -182,10 +189,13 @@ export default function BeterjesztoView({ documents, currentUser, onAddDocument,
 
   // Actual processor called once user confirms metadata in the modal
   const executeFileParsing = (file: File, deadlineVal: string, commentVal: string) => {
+    setUploadedFileName(file.name);
     const reader = new FileReader();
     const docTitle = file.name.replace(/\.[^/.]+$/, ""); // strip extension
+    const isDocx = file.name.toLowerCase().endsWith('.docx') || 
+                    file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-    if (file.name.endsWith('.docx')) {
+    if (isDocx) {
       const readerBase64 = new FileReader();
       readerBase64.onload = (e) => {
         const dataUrlStr = e.target?.result as string;
@@ -200,7 +210,7 @@ export default function BeterjesztoView({ documents, currentUser, onAddDocument,
     }
 
     reader.onload = async (event) => {
-      if (file.name.endsWith('.docx')) {
+      if (isDocx) {
         const arrayBuffer = event.target?.result as ArrayBuffer;
         try {
           const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
@@ -223,7 +233,7 @@ export default function BeterjesztoView({ documents, currentUser, onAddDocument,
       }
     };
 
-    if (file.name.endsWith('.docx')) {
+    if (isDocx) {
       reader.readAsArrayBuffer(file);
     } else {
       reader.readAsText(file);
@@ -269,32 +279,41 @@ export default function BeterjesztoView({ documents, currentUser, onAddDocument,
   };
 
   const handleDownloadDocx = (doc: Document) => {
+    if (doc.correctedDocxBase64) {
+      try {
+        const byteCharacters = atob(doc.correctedDocxBase64);
+        const byteNumbers = new Uint8Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const blob = new Blob([byteNumbers], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const baseName = doc.title.endsWith('.docx') ? doc.title.slice(0, -5) : doc.title;
+        const downloadName = doc.correctedFilename || `${baseName}_final.docx`;
+        link.download = downloadName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        return;
+      } catch (err: any) {
+        console.error("Hiba a tárolt véglegesített Word fájl letöltése közben, dinamikus generálásra váltás...", err);
+      }
+    }
+
     try {
-      const docxFile = new DocxGen({
-        sections: [
-          {
-            properties: {},
-            children: doc.paragraphs.map(
-              (p) =>
-                new DocxParagraphTag({
-                  children: [
-                    new TextRun({
-                      text: p.currentText,
-                      size: 24, // 12pt (Word half-points: 24 = 12pt)
-                    }),
-                  ],
-                })
-            ),
-          },
-        ],
-      });
+      const docxFile = generateBeautifulDocx(doc.title, doc.paragraphs.map(p => p.currentText));
 
       Packer.toBlob(docxFile).then((blob) => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
         const baseName = doc.title.endsWith('.docx') ? doc.title.slice(0, -5) : doc.title;
-        link.download = `${baseName}_final.docx`;
+        const downloadName = doc.correctedFilename || `${baseName}_final.docx`;
+        link.download = downloadName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -316,7 +335,7 @@ export default function BeterjesztoView({ documents, currentUser, onAddDocument,
             Dokumentum Beterjesztő Központ
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Töltsön fel MS Word fájlokat, vagy válasszon sablonok közül, amelyeket a véleményezők korrektúrával javíthatnak.
+            Töltsön fel MS Word (.docx) vagy szövegfájlokat, amelyeket a véleményezők korrektúrával javíthatnak.
           </p>
         </div>
       </div>
@@ -328,31 +347,6 @@ export default function BeterjesztoView({ documents, currentUser, onAddDocument,
             <FileText className="w-5 h-5 text-slate-800" />
             Új Dokumentum Beterjesztése
           </h2>
-
-          <div className="mb-4">
-            <span className="text-xs font-bold text-slate-600 block uppercase tracking-wider mb-2">
-              Gyorsindítás Céges Sablonból:
-            </span>
-            <div className="grid grid-cols-2 gap-2" id="doc-templates">
-              {TEMPLATES.map((tpl, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleTemplateSelect(idx)}
-                  className={`p-3 border rounded-xl text-left transition-all ${
-                    selectedTemplateIdx === idx
-                      ? 'border-slate-900 bg-slate-50 ring-1 ring-slate-900/30'
-                      : 'border-slate-200 hover:border-slate-350 bg-white'
-                  } cursor-pointer`}
-                >
-                  <p className="text-xs font-bold text-slate-800 truncate">{tpl.title}</p>
-                  <span className="text-[10px] text-slate-500 block mt-1">
-                    {tpl.paragraphs.length} bekezdésből áll
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
 
           <form onSubmit={handleCreateDocument} className="space-y-4">
             {/* Drag & Drop Area */}
@@ -399,7 +393,7 @@ export default function BeterjesztoView({ documents, currentUser, onAddDocument,
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Pl: Adatvédelmi Irányelvek 2026.docx"
+                placeholder="Pl: Adatvédelmi Irányelvek 2026"
                 className="block w-full px-3 py-2 border border-slate-300 bg-white text-slate-900 rounded-lg text-sm focus:outline-hidden focus:ring-1 focus:ring-slate-950 focus:border-slate-950"
               />
             </div>

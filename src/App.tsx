@@ -86,7 +86,9 @@ export default function App() {
     paragraphs: Paragraph[],
     originalDocxBase64?: string,
     reviewDeadline?: string,
-    comment?: string
+    comment?: string,
+    originalFilename?: string,
+    correctedFilename?: string
   ) => {
     if (!currentUser) return;
 
@@ -99,6 +101,8 @@ export default function App() {
       status: 'under_review', // Automatically goes to review queue
       paragraphs,
       originalDocxBase64,
+      originalFilename,
+      correctedFilename,
       reviewDeadline,
       comment,
       history: [

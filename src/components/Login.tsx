@@ -85,9 +85,11 @@ export default function Login({ users, onLoginSuccess }: LoginProps) {
           <FileText className="w-7 h-7 animate-pulse" />
         </div>
         <h2 className="text-3xl font-extrabold text-slate-950 tracking-tight">DocuReview</h2>
-        <p className="mt-2 text-sm text-slate-600 font-medium max-w-xs mx-auto">
-          Biztonságos webes dokumentum korrektúrázó és jóváhagyó rendszer
-        </p>
+        <div className="mt-2 text-sm text-slate-600 font-medium max-w-xs mx-auto leading-relaxed">
+          <p>Webes dokumentum korrektúrázó</p>
+          <p>és jóváhagyó rendszer</p>
+          <p className="mt-1 text-slate-500 font-semibold">[Teszt verzió!]</p>
+        </div>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md" id="login-card">

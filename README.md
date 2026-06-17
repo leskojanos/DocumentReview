@@ -18,19 +18,29 @@ The system enforces strict permission boundaries based on user roles:
 2. **Submitter (Beterjesztő):**
    - Upload new draft documents using drag-and-drop file upload (supports MS Word `.docx` and `.txt` files).
    - Speed up creation with built-in corporate templates (e.g., ISO 9001 Quality Manual, Organizational Regulations).
-   - Track submitted drafts, approval actions, and official event logs.
+   - Track submitted drafts, approval actions, and download the high-fidelity original/final Word `.docx` files containing pristine layout styles.
 
 3. **Reviewer (Véleményező):**
    - Interactive correction workbench with paragraph-level targeting.
    - Submit four types of structured corrections: **Modify/Replace**, **Delete**, **Insert**, or **Comment/Note**.
    - Input professional justifications and arguments for each suggested change.
+   - Download the high-fidelity formatted `.docx` files preserving precise original styling.
 
 4. **Approver (Jóváhagyó):**
    - Executive decision-making board and virtual signing center.
    - Review proposed corrections individually with options to **Accept** or **Reject** suggestions.
    - Acceptances dynamically merge and update the document text flow automatically.
+   - Upload finalized corrected `.docx` documents or auto-generate formatted exports.
    - Finalize and seal the document status, locking it from further changes.
-   - Copy clean finalized text to clipboard or export directly as a `.txt` file.
+   - Copy clean finalized text to clipboard or export directly as a `.txt` file or as a high-fidelity Microsoft Word `.docx` file.
+
+---
+
+## 📄 High-Fidelity Word (.docx) Layout Preservation
+
+To guarantee that documents processed through the system maintain their styled Word layouts (margins, custom track-changes, corporate headers/footers, and specific typographic formatting), DocuReview features a robust Base64 binary preservation layer:
+- **Base64 Storage Pipeline**: Uploaded original documents (`originalDocxBase64`) and reviewer-corrected or approver-uploaded versions (`correctedDocxBase64`) are encoded and safely persisted directly within the client-side/database schema.
+- **Direct Layout Downloads**: The "Download (*.docx)" buttons across all three workspaces prioritize fetching the actual, high-fidelity source binary rather than generating a plain-template substitute, ensuring pristine document consistency across all organizational roles.
 
 ---
 

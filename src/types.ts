@@ -53,6 +53,9 @@ export interface Document {
   paragraphs: Paragraph[];
   history: DocumentHistory[];
   originalDocxBase64?: string;
+  correctedDocxBase64?: string;
+  originalFilename?: string;
+  correctedFilename?: string;
   reviewDeadline?: string;
   comment?: string;
   isDeadlineExtended?: boolean;
