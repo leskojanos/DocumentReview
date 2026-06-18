@@ -27,7 +27,7 @@ jobs:
 
       - name: Projekt becsomagolása ZIP-be
         # ITT MÓDOSULT A FÁJLNÉV:
-        run: zip -r DocumentReviewPord_${{ github.ref_name }}.zip dist/
+        run: zip -r DocumentReviewProd_${{ github.ref_name }}.zip dist/
 
       - name: GitHub Release létrehozása és aszet feltöltése
         uses: softprops/action-gh-release@v1
